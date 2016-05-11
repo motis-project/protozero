@@ -88,12 +88,6 @@ public:
 template <typename T>
 using const_fixed_iterator = const T*;
 
-template <typename T>
-inline iterator_range<const_fixed_iterator<T>> create_fixed_iterator_range(const char* first, const char* last) {
-    return iterator_range<const_fixed_iterator<T>>{reinterpret_cast<const T*>(first),
-                                                   reinterpret_cast<const T*>(last)};
-}
-
 #else
 
 template <typename T>
@@ -155,12 +149,6 @@ public:
 
 }; // class const_fixed_iterator
 
-template <typename T>
-inline iterator_range<const_fixed_iterator<T>> create_fixed_iterator_range(const char* first, const char* last) {
-    return iterator_range<const_fixed_iterator<T>>{const_fixed_iterator<T>(first, last),
-                                                   const_fixed_iterator<T>(last, last)};
-}
-
 #endif
 
 template <typename T>
@@ -174,7 +162,7 @@ protected:
 public:
 
     using iterator_category = std::forward_iterator_tag;
-    using value_type        = T;
+    using value_type        = typename T::type;
     using difference_type   = std::ptrdiff_t;
     using pointer           = value_type*;
     using reference         = value_type&;
@@ -229,7 +217,7 @@ class const_svarint_iterator : public const_varint_iterator<T> {
 public:
 
     using iterator_category = std::forward_iterator_tag;
-    using value_type        = T;
+    using value_type        = typename T::type;
     using difference_type   = std::ptrdiff_t;
     using pointer           = value_type*;
     using reference         = value_type&;
@@ -267,6 +255,32 @@ public:
     }
 
 }; // class const_svarint_iterator
+
+template <typename T>
+struct iterator_range_creator {
+
+    using iterator = T;
+    using range = iterator_range<iterator>;
+
+    constexpr static range create(const char* first, const char* last) {
+        return range{iterator{first, last},
+                     iterator{last, last}};
+    }
+
+}; // struct iterator_range_creator
+
+template <typename T>
+struct iterator_range_creator<const T*> {
+
+    using iterator = const T*;
+    using range = iterator_range<iterator>;
+
+    constexpr static range create(const char* first, const char* last) {
+        return range{reinterpret_cast<const T*>(first),
+                     reinterpret_cast<const T*>(last)};
+    }
+
+}; // struct iterator_range_creator
 
 } // end namespace protozero
 

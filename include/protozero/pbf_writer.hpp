@@ -22,6 +22,7 @@ documentation.
 #include <iterator>
 #include <limits>
 #include <string>
+#include <type_traits>
 
 #include <protozero/config.hpp>
 #include <protozero/types.hpp>
@@ -32,14 +33,6 @@ documentation.
 #endif
 
 namespace protozero {
-
-namespace detail {
-
-    template <typename T> class packed_field_varint;
-    template <typename T> class packed_field_svarint;
-    template <typename T> class packed_field_fixed;
-
-} // end namespace detail
 
 /**
  * The pbf_writer is used to write PBF formatted messages into a buffer.
@@ -80,11 +73,6 @@ class pbf_writer {
         add_varint(b);
     }
 
-    void add_tagged_varint(pbf_tag_type tag, uint64_t value) {
-        add_field(tag, pbf_wire_type::varint);
-        add_varint(value);
-    }
-
     template <typename T>
     void add_fixed(T value) {
         protozero_assert(m_pos == 0 && "you can't add fields to a parent pbf_writer if there is an existing pbf_writer for a submessage");
@@ -96,60 +84,6 @@ class pbf_writer {
         m_data->resize(size + sizeof(T));
         byteswap<sizeof(T)>(reinterpret_cast<const char*>(&value), const_cast<char*>(m_data->data() + size));
 #endif
-    }
-
-    template <typename T, typename It>
-    void add_packed_fixed(pbf_tag_type tag, It first, It last, std::input_iterator_tag) {
-        if (first == last) {
-            return;
-        }
-
-        pbf_writer sw(*this, tag);
-
-        while (first != last) {
-            sw.add_fixed<T>(*first++);
-        }
-    }
-
-    template <typename T, typename It>
-    void add_packed_fixed(pbf_tag_type tag, It first, It last, std::forward_iterator_tag) {
-        if (first == last) {
-            return;
-        }
-
-        const auto length = std::distance(first, last);
-        add_length_varint(tag, sizeof(T) * pbf_length_type(length));
-        reserve(sizeof(T) * std::size_t(length));
-
-        while (first != last) {
-            add_fixed<T>(*first++);
-        }
-    }
-
-    template <typename It>
-    void add_packed_varint(pbf_tag_type tag, It first, It last) {
-        if (first == last) {
-            return;
-        }
-
-        pbf_writer sw(*this, tag);
-
-        while (first != last) {
-            sw.add_varint(uint64_t(*first++));
-        }
-    }
-
-    template <typename It>
-    void add_packed_svarint(pbf_tag_type tag, It first, It last) {
-        if (first == last) {
-            return;
-        }
-
-        pbf_writer sw(*this, tag);
-
-        while (first != last) {
-            sw.add_varint(encode_zigzag64(*first++));
-        }
     }
 
     // The number of bytes to reserve for the varint holding the length of
@@ -214,6 +148,61 @@ class pbf_writer {
         add_field(tag, pbf_wire_type::length_delimited);
         add_varint(length);
     }
+
+    template <typename T>
+    void add_impl(T value, varint_tag) {
+        write_varint(std::back_inserter(*m_data), uint64_t(value));
+    }
+
+    template <typename T>
+    void add_impl(T value, bool_tag) {
+        m_data->append(1, value);
+    }
+
+    template <typename T>
+    void add_impl(T value, svarint_tag) {
+        write_varint(std::back_inserter(*m_data), uint64_t(encode_zigzag64(value)));
+    }
+
+    template <typename T>
+    void add_impl(T value, fixed_tag) {
+        add_fixed<T>(value);
+    }
+
+    template <typename T>
+    void add_impl(const data_view& value, length_delimited_tag) {
+        protozero_assert(value.size() <= std::numeric_limits<pbf_length_type>::max());
+        add_varint(pbf_length_type(value.size()));
+        m_data->append(value.data(), value.size());
+    }
+
+    template <typename T, typename I, typename G, typename C, typename Enable = void>
+    struct add_packed_impl {
+    };
+
+    template <typename T, typename I, typename G, typename C>
+    struct add_packed_impl<T, I, G, C, typename std::enable_if<!fixed_length<G, C>::value>::type> {
+        static void apply(pbf_writer& writer, pbf_tag_type tag, I first, I last) {
+            pbf_writer sw(writer, tag);
+
+            while (first != last) {
+                sw.add_impl<typename T::type>(*first++, typename T::tag{});
+            }
+        }
+    };
+
+    template <typename T, typename I, typename G, typename C>
+    struct add_packed_impl<T, I, G, C, typename std::enable_if<fixed_length<G, C>::value>::type> {
+        static void apply(pbf_writer& writer, pbf_tag_type tag, I first, I last) {
+            const auto length = std::distance(first, last);
+            writer.add_length_varint(tag, sizeof(typename T::type) * pbf_length_type(length));
+            writer.reserve(sizeof(typename T::type) * std::size_t(length));
+
+            while (first != last) {
+                writer.add_impl<typename T::type>(*first++, typename T::tag{});
+            }
+        }
+    };
 
 public:
 
@@ -293,6 +282,32 @@ public:
         m_data = nullptr;
     }
 
+    // parameters are two iterators -> write to packed
+    template <typename T, typename I>
+    void add(pbf_tag_type tag, I&& first, I&& last) {
+        using category = typename std::iterator_traits<typename std::remove_reference<I>::type>::iterator_category;
+
+        if (first == last) {
+            return;
+        }
+        add_packed_impl<typename T::scalar_type, I, typename T::tag, category>::apply(*this, tag, std::forward<I>(first), std::forward<I>(last));
+    }
+
+    // parameter is scalar or enum type -> write to scalar
+    template <typename T, typename V, typename std::enable_if<std::is_same<typename detail::traits<T>::tag, detail::is_scalar>::value>::type* = nullptr>
+    void add(pbf_tag_type tag, V&& value) {
+        add_field(tag, T::wire_type);
+        protozero_assert(m_pos == 0 && "you can't add fields to a parent pbf_writer if there is an existing pbf_writer for a submessage");
+        protozero_assert(m_data);
+        add_impl<typename T::type>(std::forward<V>(value), typename T::tag{});
+    }
+
+    // parameter is container type -> write to packed
+    template <typename T, typename C, typename V = typename C::value_type, typename std::enable_if<std::is_same<typename T::type, V>::value>::type* = nullptr>
+    void add(pbf_tag_type tag, const C& value) {
+        add<T>(tag, std::begin(value), std::end(value));
+    }
+
     ///@{
     /**
      * @name Scalar field writer functions
@@ -305,10 +320,7 @@ public:
      * @param value Value to be written
      */
     void add_bool(pbf_tag_type tag, bool value) {
-        add_field(tag, pbf_wire_type::varint);
-        protozero_assert(m_pos == 0 && "you can't add fields to a parent pbf_writer if there is an existing pbf_writer for a submessage");
-        protozero_assert(m_data);
-        m_data->append(1, value);
+        add<types::_bool>(tag, value);
     }
 
     /**
@@ -318,7 +330,7 @@ public:
      * @param value Value to be written
      */
     void add_enum(pbf_tag_type tag, int32_t value) {
-        add_tagged_varint(tag, uint64_t(value));
+        add<types::_enum>(tag, value);
     }
 
     /**
@@ -328,7 +340,7 @@ public:
      * @param value Value to be written
      */
     void add_int32(pbf_tag_type tag, int32_t value) {
-        add_tagged_varint(tag, uint64_t(value));
+        add<types::_int32>(tag, value);
     }
 
     /**
@@ -338,7 +350,7 @@ public:
      * @param value Value to be written
      */
     void add_sint32(pbf_tag_type tag, int32_t value) {
-        add_tagged_varint(tag, encode_zigzag32(value));
+        add<types::_sint32>(tag, value);
     }
 
     /**
@@ -348,7 +360,7 @@ public:
      * @param value Value to be written
      */
     void add_uint32(pbf_tag_type tag, uint32_t value) {
-        add_tagged_varint(tag, value);
+        add<types::_uint32>(tag, value);
     }
 
     /**
@@ -358,7 +370,7 @@ public:
      * @param value Value to be written
      */
     void add_int64(pbf_tag_type tag, int64_t value) {
-        add_tagged_varint(tag, uint64_t(value));
+        add<types::_int64>(tag, value);
     }
 
     /**
@@ -368,7 +380,7 @@ public:
      * @param value Value to be written
      */
     void add_sint64(pbf_tag_type tag, int64_t value) {
-        add_tagged_varint(tag, encode_zigzag64(value));
+        add<types::_sint64>(tag, value);
     }
 
     /**
@@ -378,7 +390,7 @@ public:
      * @param value Value to be written
      */
     void add_uint64(pbf_tag_type tag, uint64_t value) {
-        add_tagged_varint(tag, value);
+        add<types::_uint64>(tag, value);
     }
 
     /**
@@ -388,8 +400,7 @@ public:
      * @param value Value to be written
      */
     void add_fixed32(pbf_tag_type tag, uint32_t value) {
-        add_field(tag, pbf_wire_type::fixed32);
-        add_fixed<uint32_t>(value);
+        add<types::_fixed32>(tag, value);
     }
 
     /**
@@ -399,8 +410,7 @@ public:
      * @param value Value to be written
      */
     void add_sfixed32(pbf_tag_type tag, int32_t value) {
-        add_field(tag, pbf_wire_type::fixed32);
-        add_fixed<int32_t>(value);
+        add<types::_sfixed32>(tag, value);
     }
 
     /**
@@ -410,8 +420,7 @@ public:
      * @param value Value to be written
      */
     void add_fixed64(pbf_tag_type tag, uint64_t value) {
-        add_field(tag, pbf_wire_type::fixed64);
-        add_fixed<uint64_t>(value);
+        add<types::_fixed64>(tag, value);
     }
 
     /**
@@ -421,8 +430,7 @@ public:
      * @param value Value to be written
      */
     void add_sfixed64(pbf_tag_type tag, int64_t value) {
-        add_field(tag, pbf_wire_type::fixed64);
-        add_fixed<int64_t>(value);
+        add<types::_sfixed64>(tag, value);
     }
 
     /**
@@ -432,8 +440,7 @@ public:
      * @param value Value to be written
      */
     void add_float(pbf_tag_type tag, float value) {
-        add_field(tag, pbf_wire_type::fixed32);
-        add_fixed<float>(value);
+        add<types::_float>(tag, value);
     }
 
     /**
@@ -443,8 +450,7 @@ public:
      * @param value Value to be written
      */
     void add_double(pbf_tag_type tag, double value) {
-        add_field(tag, pbf_wire_type::fixed64);
-        add_fixed<double>(value);
+        add<types::_double>(tag, value);
     }
 
     /**
@@ -455,11 +461,7 @@ public:
      * @param size Number of bytes to be written
      */
     void add_bytes(pbf_tag_type tag, const char* value, std::size_t size) {
-        protozero_assert(m_pos == 0 && "you can't add fields to a parent pbf_writer if there is an existing pbf_writer for a submessage");
-        protozero_assert(m_data);
-        protozero_assert(size <= std::numeric_limits<pbf_length_type>::max());
-        add_length_varint(tag, pbf_length_type(size));
-        m_data->append(value, size);
+        add<types::_bytes>(tag, data_view{value, size});
     }
 
     /**
@@ -469,7 +471,7 @@ public:
      * @param value Value to be written
      */
     void add_bytes(pbf_tag_type tag, const std::string& value) {
-        add_bytes(tag, value.data(), value.size());
+        add<types::_bytes>(tag, data_view{value.data(), value.size()});
     }
 
     /**
@@ -480,7 +482,7 @@ public:
      * @param size Number of bytes to be written
      */
     void add_string(pbf_tag_type tag, const char* value, std::size_t size) {
-        add_bytes(tag, value, size);
+        add<types::_string>(tag, data_view{value, size});
     }
 
     /**
@@ -490,7 +492,7 @@ public:
      * @param value Value to be written
      */
     void add_string(pbf_tag_type tag, const std::string& value) {
-        add_bytes(tag, value.data(), value.size());
+        add<types::_string>(tag, data_view{value.data(), value.size()});
     }
 
     /**
@@ -501,7 +503,7 @@ public:
      * @param value Pointer to value to be written
      */
     void add_string(pbf_tag_type tag, const char* value) {
-        add_bytes(tag, value, std::strlen(value));
+        add<types::_string>(tag, data_view{value, std::strlen(value)});
     }
 
     /**
@@ -512,7 +514,7 @@ public:
      * @param size Length of the message
      */
     void add_message(pbf_tag_type tag, const char* value, std::size_t size) {
-        add_bytes(tag, value, size);
+        add<types::_message>(tag, data_view{value, size});
     }
 
     /**
@@ -522,7 +524,7 @@ public:
      * @param value Value to be written. The value must be a complete message.
      */
     void add_message(pbf_tag_type tag, const std::string& value) {
-        add_bytes(tag, value.data(), value.size());
+        add<types::_message>(tag, data_view{value.data(), value.size()});
     }
 
     ///@}
@@ -542,8 +544,8 @@ public:
      * @param last Iterator pointing one past the end of data
      */
     template <typename InputIterator>
-    void add_packed_bool(pbf_tag_type tag, InputIterator first, InputIterator last) {
-        add_packed_varint(tag, first, last);
+    void add_packed_bool(pbf_tag_type tag, InputIterator&& first, InputIterator&& last) {
+        add<types::packed<types::_bool>>(tag, std::forward<InputIterator>(first), std::forward<InputIterator>(last));
     }
 
     /**
@@ -556,8 +558,8 @@ public:
      * @param last Iterator pointing one past the end of data
      */
     template <typename InputIterator>
-    void add_packed_enum(pbf_tag_type tag, InputIterator first, InputIterator last) {
-        add_packed_varint(tag, first, last);
+    void add_packed_enum(pbf_tag_type tag, InputIterator&& first, InputIterator&& last) {
+        add<types::packed<types::_enum>>(tag, std::forward<InputIterator>(first), std::forward<InputIterator>(last));
     }
 
     /**
@@ -570,8 +572,8 @@ public:
      * @param last Iterator pointing one past the end of data
      */
     template <typename InputIterator>
-    void add_packed_int32(pbf_tag_type tag, InputIterator first, InputIterator last) {
-        add_packed_varint(tag, first, last);
+    void add_packed_int32(pbf_tag_type tag, InputIterator&& first, InputIterator&& last) {
+        add<types::packed<types::_int32>>(tag, std::forward<InputIterator>(first), std::forward<InputIterator>(last));
     }
 
     /**
@@ -584,8 +586,8 @@ public:
      * @param last Iterator pointing one past the end of data
      */
     template <typename InputIterator>
-    void add_packed_sint32(pbf_tag_type tag, InputIterator first, InputIterator last) {
-        add_packed_svarint(tag, first, last);
+    void add_packed_sint32(pbf_tag_type tag, InputIterator&& first, InputIterator&& last) {
+        add<types::packed<types::_sint32>>(tag, std::forward<InputIterator>(first), std::forward<InputIterator>(last));
     }
 
     /**
@@ -598,8 +600,8 @@ public:
      * @param last Iterator pointing one past the end of data
      */
     template <typename InputIterator>
-    void add_packed_uint32(pbf_tag_type tag, InputIterator first, InputIterator last) {
-        add_packed_varint(tag, first, last);
+    void add_packed_uint32(pbf_tag_type tag, InputIterator&& first, InputIterator&& last) {
+        add<types::packed<types::_uint32>>(tag, std::forward<InputIterator>(first), std::forward<InputIterator>(last));
     }
 
     /**
@@ -612,8 +614,8 @@ public:
      * @param last Iterator pointing one past the end of data
      */
     template <typename InputIterator>
-    void add_packed_int64(pbf_tag_type tag, InputIterator first, InputIterator last) {
-        add_packed_varint(tag, first, last);
+    void add_packed_int64(pbf_tag_type tag, InputIterator&& first, InputIterator&& last) {
+        add<types::packed<types::_int64>>(tag, std::forward<InputIterator>(first), std::forward<InputIterator>(last));
     }
 
     /**
@@ -626,8 +628,8 @@ public:
      * @param last Iterator pointing one past the end of data
      */
     template <typename InputIterator>
-    void add_packed_sint64(pbf_tag_type tag, InputIterator first, InputIterator last) {
-        add_packed_svarint(tag, first, last);
+    void add_packed_sint64(pbf_tag_type tag, InputIterator&& first, InputIterator&& last) {
+        add<types::packed<types::_sint64>>(tag, std::forward<InputIterator>(first), std::forward<InputIterator>(last));
     }
 
     /**
@@ -640,8 +642,8 @@ public:
      * @param last Iterator pointing one past the end of data
      */
     template <typename InputIterator>
-    void add_packed_uint64(pbf_tag_type tag, InputIterator first, InputIterator last) {
-        add_packed_varint(tag, first, last);
+    void add_packed_uint64(pbf_tag_type tag, InputIterator&& first, InputIterator&& last) {
+        add<types::packed<types::_uint64>>(tag, std::forward<InputIterator>(first), std::forward<InputIterator>(last));
     }
 
     /**
@@ -654,9 +656,8 @@ public:
      * @param last Iterator pointing one past the end of data
      */
     template <typename InputIterator>
-    void add_packed_fixed32(pbf_tag_type tag, InputIterator first, InputIterator last) {
-        add_packed_fixed<uint32_t, InputIterator>(tag, first, last,
-            typename std::iterator_traits<InputIterator>::iterator_category());
+    void add_packed_fixed32(pbf_tag_type tag, InputIterator&& first, InputIterator&& last) {
+        add<types::packed<types::_fixed32>>(tag, std::forward<InputIterator>(first), std::forward<InputIterator>(last));
     }
 
     /**
@@ -669,9 +670,8 @@ public:
      * @param last Iterator pointing one past the end of data
      */
     template <typename InputIterator>
-    void add_packed_sfixed32(pbf_tag_type tag, InputIterator first, InputIterator last) {
-        add_packed_fixed<int32_t, InputIterator>(tag, first, last,
-            typename std::iterator_traits<InputIterator>::iterator_category());
+    void add_packed_sfixed32(pbf_tag_type tag, InputIterator&& first, InputIterator&& last) {
+        add<types::packed<types::_sfixed32>>(tag, std::forward<InputIterator>(first), std::forward<InputIterator>(last));
     }
 
     /**
@@ -684,9 +684,8 @@ public:
      * @param last Iterator pointing one past the end of data
      */
     template <typename InputIterator>
-    void add_packed_fixed64(pbf_tag_type tag, InputIterator first, InputIterator last) {
-        add_packed_fixed<uint64_t, InputIterator>(tag, first, last,
-            typename std::iterator_traits<InputIterator>::iterator_category());
+    void add_packed_fixed64(pbf_tag_type tag, InputIterator&& first, InputIterator&& last) {
+        add<types::packed<types::_fixed64>>(tag, std::forward<InputIterator>(first), std::forward<InputIterator>(last));
     }
 
     /**
@@ -699,9 +698,8 @@ public:
      * @param last Iterator pointing one past the end of data
      */
     template <typename InputIterator>
-    void add_packed_sfixed64(pbf_tag_type tag, InputIterator first, InputIterator last) {
-        add_packed_fixed<int64_t, InputIterator>(tag, first, last,
-            typename std::iterator_traits<InputIterator>::iterator_category());
+    void add_packed_sfixed64(pbf_tag_type tag, InputIterator&& first, InputIterator&& last) {
+        add<types::packed<types::_sfixed64>>(tag, std::forward<InputIterator>(first), std::forward<InputIterator>(last));
     }
 
     /**
@@ -714,9 +712,8 @@ public:
      * @param last Iterator pointing one past the end of data
      */
     template <typename InputIterator>
-    void add_packed_float(pbf_tag_type tag, InputIterator first, InputIterator last) {
-        add_packed_fixed<float, InputIterator>(tag, first, last,
-            typename std::iterator_traits<InputIterator>::iterator_category());
+    void add_packed_float(pbf_tag_type tag, InputIterator&& first, InputIterator&& last) {
+        add<types::packed<types::_float>>(tag, std::forward<InputIterator>(first), std::forward<InputIterator>(last));
     }
 
     /**
@@ -729,9 +726,8 @@ public:
      * @param last Iterator pointing one past the end of data
      */
     template <typename InputIterator>
-    void add_packed_double(pbf_tag_type tag, InputIterator first, InputIterator last) {
-        add_packed_fixed<double, InputIterator>(tag, first, last,
-            typename std::iterator_traits<InputIterator>::iterator_category());
+    void add_packed_double(pbf_tag_type tag, InputIterator&& first, InputIterator&& last) {
+        add<types::packed<types::_double>>(tag, std::forward<InputIterator>(first), std::forward<InputIterator>(last));
     }
 
     ///@}
@@ -739,6 +735,9 @@ public:
     template <typename T> friend class detail::packed_field_varint;
     template <typename T> friend class detail::packed_field_svarint;
     template <typename T> friend class detail::packed_field_fixed;
+    template <typename T, int N> friend class detail::packed_field_varint_tag;
+    template <typename T, int N> friend class detail::packed_field_svarint_tag;
+    template <typename T, int N> friend class detail::packed_field_fixed_tag;
 
 }; // class pbf_writer
 
@@ -785,6 +784,25 @@ namespace detail {
 
     }; // class packed_field_fixed
 
+    template <typename T, int N>
+    class packed_field_fixed_tag : public packed_field {
+
+    public:
+
+        packed_field_fixed_tag(pbf_writer& parent_writer) :
+            packed_field(parent_writer, N) {
+        }
+
+        packed_field_fixed_tag(pbf_writer& parent_writer, std::size_t size) :
+            packed_field(parent_writer, N, size * sizeof(T)) {
+        }
+
+        void add_element(T value) {
+            m_writer.add_fixed<T>(value);
+        }
+
+    }; // class packed_field_fixed_tag
+
     template <typename T>
     class packed_field_varint : public packed_field {
 
@@ -800,6 +818,25 @@ namespace detail {
 
     }; // class packed_field_varint
 
+    template <typename T, int N>
+    class packed_field_varint_tag : public packed_field {
+
+    public:
+
+        packed_field_varint_tag(pbf_writer& parent_writer) :
+            packed_field(parent_writer, N) {
+        }
+
+        packed_field_varint_tag(pbf_writer& parent_writer, std::size_t) :
+            packed_field(parent_writer, N) {
+        }
+
+        void add_element(T value) {
+            m_writer.add_varint(uint64_t(value));
+        }
+
+    }; // class packed_field_varint_tag
+
     template <typename T>
     class packed_field_svarint : public packed_field {
 
@@ -814,6 +851,25 @@ namespace detail {
         }
 
     }; // class packed_field_svarint
+
+    template <typename T, int N>
+    class packed_field_svarint_tag : public packed_field {
+
+    public:
+
+        packed_field_svarint_tag(pbf_writer& parent_writer) :
+            packed_field(parent_writer, N) {
+        }
+
+        packed_field_svarint_tag(pbf_writer& parent_writer, std::size_t) :
+            packed_field(parent_writer, N) {
+        }
+
+        void add_element(T value) {
+            m_writer.add_varint(encode_zigzag64(value));
+        }
+
+    }; // class packed_field_svarint_tag
 
 } // end namespace detail
 
