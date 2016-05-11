@@ -3,18 +3,18 @@
 
 namespace TestComplex {
 
-enum class Test : protozero::pbf_tag_type {
-    required_fixed32_f      = 1,
-    optional_int64_i        = 2,
-    optional_int64_j        = 3,
-    required_Sub_submessage = 5,
-    optional_string_s       = 8,
-    repeated_uint32_u       = 4,
-    packed_sint32_d         = 7
+PROTOZERO_MESSAGE(Sub) {
+    PROTOZERO_FIELD(string, s, 1);
 };
 
-enum class Sub : protozero::pbf_tag_type {
-    required_string_s = 1
+PROTOZERO_MESSAGE(Test) {
+    PROTOZERO_FIELD(fixed32, f, 1);
+    PROTOZERO_FIELD(int64, i, 2);
+    PROTOZERO_FIELD(int64, j, 3);
+    PROTOZERO_MESSAGE_FIELD(Sub, submessage, 5);
+    PROTOZERO_FIELD(string, s, 8);
+    PROTOZERO_FIELD(uint32, u, 4);
+    PROTOZERO_PACKED_FIELD(sint32, d, 7);
 };
 
 } // end namespace TestComplex
@@ -165,23 +165,23 @@ TEST_CASE("read complex data using pbf_reader") {
 
 }
 
-TEST_CASE("read complex data using pbf_message") {
+TEST_CASE("read complex data using message") {
 
     SECTION("minimal") {
         const std::string buffer = load_data("complex/data-minimal");
 
-        protozero::pbf_message<TestComplex::Test> item(buffer);
+        protozero::message<TestComplex::Test> item(buffer);
 
         while (item.next()) {
             switch (item.tag()) {
-                case TestComplex::Test::required_fixed32_f: {
-                    REQUIRE(item.get_fixed32() == 12345678L);
+                case FIELD_TAG(item, f): {
+                    REQUIRE(FIELD_VALUE(item, f) == 12345678L);
                     break;
                 }
-                case TestComplex::Test::required_Sub_submessage: {
-                    protozero::pbf_message<TestComplex::Sub> subitem = item.get_message();
+                case FIELD_TAG(item, submessage): {
+                    auto subitem = FIELD_VALUE(item, submessage);
                     REQUIRE(subitem.next());
-                    REQUIRE(subitem.get_string() == "foobar");
+                    REQUIRE(std::string(FIELD_VALUE(subitem, s)) == "foobar");
                     REQUIRE(!subitem.next());
                     break;
                 }
@@ -196,28 +196,28 @@ TEST_CASE("read complex data using pbf_message") {
     SECTION("some") {
         const std::string buffer = load_data("complex/data-some");
 
-        protozero::pbf_message<TestComplex::Test> item(buffer);
+        protozero::message<TestComplex::Test> item(buffer);
 
         uint32_t sum_of_u = 0;
         while (item.next()) {
             switch (item.tag()) {
-                case TestComplex::Test::required_fixed32_f: {
-                    REQUIRE(item.get_fixed32() == 12345678L);
+                case FIELD_TAG(item, f): {
+                    REQUIRE(FIELD_VALUE(item, f) == 12345678L);
                     break;
                 }
-                case TestComplex::Test::optional_int64_i: {
+                case FIELD_TAG(item, i): {
                     REQUIRE(true);
                     item.skip();
                     break;
                 }
-                case TestComplex::Test::repeated_uint32_u: {
-                    sum_of_u += item.get_uint32();
+                case FIELD_TAG(item, u): {
+                    sum_of_u += FIELD_VALUE(item, u);
                     break;
                 }
-                case TestComplex::Test::required_Sub_submessage: {
-                    protozero::pbf_message<TestComplex::Sub> subitem = item.get_message();
+                case FIELD_TAG(item, submessage): {
+                    auto subitem = FIELD_VALUE(item, submessage);
                     REQUIRE(subitem.next());
-                    REQUIRE(subitem.get_string() == "foobar");
+                    REQUIRE(std::string(FIELD_VALUE(subitem, s)) == "foobar");
                     REQUIRE(!subitem.next());
                     break;
                 }
@@ -233,38 +233,38 @@ TEST_CASE("read complex data using pbf_message") {
     SECTION("all") {
         const std::string buffer = load_data("complex/data-all");
 
-        protozero::pbf_message<TestComplex::Test> item(buffer);
+        protozero::message<TestComplex::Test> item(buffer);
 
         int number_of_u = 0;
         while (item.next()) {
             switch (item.tag()) {
-                case TestComplex::Test::required_fixed32_f: {
-                    REQUIRE(item.get_fixed32() == 12345678L);
+                case FIELD_TAG(item, f): {
+                    REQUIRE(FIELD_VALUE(item, f) == 12345678L);
                     break;
                 }
-                case TestComplex::Test::optional_int64_i: {
+                case FIELD_TAG(item, i): {
                     REQUIRE(true);
                     item.skip();
                     break;
                 }
-                case TestComplex::Test::optional_int64_j: {
-                    REQUIRE(item.get_int64() == 555555555LL);
+                case FIELD_TAG(item, j): {
+                    REQUIRE(FIELD_VALUE(item, j) == 555555555LL);
                     break;
                 }
-                case TestComplex::Test::repeated_uint32_u: {
+                case FIELD_TAG(item, u): {
                     item.skip();
                     ++number_of_u;
                     break;
                 }
-                case TestComplex::Test::required_Sub_submessage: {
-                    protozero::pbf_message<TestComplex::Sub> subitem = item.get_message();
+                case FIELD_TAG(item, submessage): {
+                    auto subitem = FIELD_VALUE(item, submessage);
                     REQUIRE(subitem.next());
-                    REQUIRE(subitem.get_string() == "foobar");
+                    REQUIRE(std::string(FIELD_VALUE(subitem, s)) == "foobar");
                     REQUIRE(!subitem.next());
                     break;
                 }
-                case TestComplex::Test::packed_sint32_d: {
-                    const auto pi = item.get_packed_sint32();
+                case FIELD_TAG(item, d): {
+                    const auto pi = FIELD_VALUE(item, d);
                     int32_t sum = 0;
                     for (auto val : pi) {
                         sum += val;
@@ -272,8 +272,8 @@ TEST_CASE("read complex data using pbf_message") {
                     REQUIRE(sum == 5);
                     break;
                 }
-                case TestComplex::Test::optional_string_s: {
-                    REQUIRE(item.get_string() == "optionalstring");
+                case FIELD_TAG(item, s): {
+                    REQUIRE(std::string(FIELD_VALUE(item, s)) == "optionalstring");
                     break;
                 }
                 default: {
@@ -288,17 +288,17 @@ TEST_CASE("read complex data using pbf_message") {
     SECTION("skip everything") {
         const std::string buffer = load_data("complex/data-all");
 
-        protozero::pbf_message<TestComplex::Test> item(buffer);
+        protozero::message<TestComplex::Test> item(buffer);
 
         while (item.next()) {
             switch (item.tag()) {
-                case TestComplex::Test::required_fixed32_f:
-                case TestComplex::Test::optional_int64_i:
-                case TestComplex::Test::optional_int64_j:
-                case TestComplex::Test::repeated_uint32_u:
-                case TestComplex::Test::required_Sub_submessage:
-                case TestComplex::Test::packed_sint32_d:
-                case TestComplex::Test::optional_string_s:
+                case FIELD_TAG(item, f):
+                case FIELD_TAG(item, i):
+                case FIELD_TAG(item, j):
+                case FIELD_TAG(item, u):
+                case FIELD_TAG(item, submessage):
+                case FIELD_TAG(item, d):
+                case FIELD_TAG(item, s):
                     item.skip();
                     break;
                 default: {
@@ -471,18 +471,18 @@ TEST_CASE("write complex data using pbf_writer") {
     }
 }
 
-TEST_CASE("write complex data using pbf_builder") {
+TEST_CASE("write complex data using builder") {
 
     SECTION("minimal") {
         std::string buffer;
-        protozero::pbf_builder<TestComplex::Test> pw(buffer);
-        pw.add_fixed32(TestComplex::Test::required_fixed32_f, 12345678);
+        protozero::builder<TestComplex::Test> builder(buffer);
+        ADD_FIELD(builder, f, 12345678u);
 
-        std::string submessage;
-        protozero::pbf_builder<TestComplex::Sub> pws(submessage);
-        pws.add_string(TestComplex::Sub::required_string_s, "foobar");
+        std::string sub_buffer;
+        protozero::builder<TestComplex::Sub> sub_builder(sub_buffer);
+        ADD_FIELD(sub_builder, s, "foobar");
 
-        pw.add_message(TestComplex::Test::required_Sub_submessage, submessage);
+        ADD_FIELD(builder, submessage, sub_buffer);
 
         protozero::pbf_reader item(buffer);
 
@@ -509,17 +509,17 @@ TEST_CASE("write complex data using pbf_builder") {
 
     SECTION("some") {
         std::string buffer;
-        protozero::pbf_builder<TestComplex::Test> pw(buffer);
-        pw.add_fixed32(TestComplex::Test::required_fixed32_f, 12345678);
+        protozero::builder<TestComplex::Test> builder(buffer);
+        ADD_FIELD(builder, f, 12345678u);
 
         std::string submessage;
-        protozero::pbf_builder<TestComplex::Sub> pws(submessage);
-        pws.add_string(TestComplex::Sub::required_string_s, "foobar");
+        protozero::builder<TestComplex::Sub> sub_builder(submessage);
+        ADD_FIELD(sub_builder, s, "foobar");
 
-        pw.add_uint32(TestComplex::Test::repeated_uint32_u, 22);
-        pw.add_uint32(TestComplex::Test::repeated_uint32_u, 44);
-        pw.add_int64(TestComplex::Test::optional_int64_i, -9876543);
-        pw.add_message(TestComplex::Test::required_Sub_submessage, submessage);
+        ADD_FIELD(builder, u, 22u);
+        ADD_FIELD(builder, u, 44u);
+        ADD_FIELD(builder, i, -9876543);
+        ADD_FIELD(builder, submessage, submessage);
 
         protozero::pbf_reader item(buffer);
 
@@ -557,25 +557,24 @@ TEST_CASE("write complex data using pbf_builder") {
 
     SECTION("all") {
         std::string buffer;
-        protozero::pbf_builder<TestComplex::Test> pw(buffer);
-        pw.add_fixed32(TestComplex::Test::required_fixed32_f, 12345678);
+        protozero::builder<TestComplex::Test> builder(buffer);
+        ADD_FIELD(builder, f, 12345678u);
 
         std::string submessage;
-        protozero::pbf_builder<TestComplex::Sub> pws(submessage);
-        pws.add_string(TestComplex::Sub::required_string_s, "foobar");
-        pw.add_message(TestComplex::Test::required_Sub_submessage, submessage);
+        protozero::builder<TestComplex::Sub> sub_builder(submessage);
+        ADD_FIELD(sub_builder, s, "foobar");
+        ADD_FIELD(builder, submessage, submessage);
 
-        pw.add_uint32(TestComplex::Test::repeated_uint32_u, 22);
-        pw.add_uint32(TestComplex::Test::repeated_uint32_u, 44);
-        pw.add_int64(TestComplex::Test::optional_int64_i, -9876543);
-        pw.add_uint32(TestComplex::Test::repeated_uint32_u, 44);
-        pw.add_uint32(TestComplex::Test::repeated_uint32_u, 66);
-        pw.add_uint32(TestComplex::Test::repeated_uint32_u, 66);
+        ADD_FIELD(builder, u, 22u);
+        ADD_FIELD(builder, u, 44u);
+        ADD_FIELD(builder, i, -9876543);
+        ADD_FIELD(builder, u, 44u);
+        ADD_FIELD(builder, u, 66u);
+        ADD_FIELD(builder, u, 66u);
 
         int32_t d[] = { -17, 22 };
-        pw.add_packed_sint32(TestComplex::Test::packed_sint32_d, std::begin(d), std::end(d));
-
-        pw.add_int64(TestComplex::Test::optional_int64_j, 555555555);
+        ADD_FIELD(builder, d, std::begin(d), std::end(d));
+        ADD_FIELD(builder, j, 555555555);
 
         protozero::pbf_reader item(buffer);
 
@@ -628,6 +627,7 @@ TEST_CASE("write complex data using pbf_builder") {
         }
         REQUIRE(number_of_u == 5);
     }
+
 }
 
 static void check_message(const std::string& buffer) {
@@ -667,14 +667,14 @@ TEST_CASE("write complex with subwriter using pbf_writer") {
     check_message(buffer_test);
 }
 
-TEST_CASE("write complex with subwriter using pbf_builder") {
+TEST_CASE("write complex with subwriter using builder") {
     std::string buffer_test;
-    protozero::pbf_builder<TestComplex::Test> pbf_test(buffer_test);
-    pbf_test.add_fixed32(TestComplex::Test::required_fixed32_f, 42L);
+    protozero::builder<TestComplex::Test> pbf_test(buffer_test);
+    ADD_FIELD(pbf_test, f, 42u);
 
     SECTION("message in message") {
-        protozero::pbf_builder<TestComplex::Sub> pbf_submessage(pbf_test, TestComplex::Test::required_Sub_submessage);
-        pbf_submessage.add_string(TestComplex::Sub::required_string_s, "foobar");
+        protozero::builder<TestComplex::Sub> pbf_submessage(pbf_test, FIELD_TAG(pbf_test, submessage));
+        ADD_FIELD(pbf_submessage, s, "foobar");
     }
 
     check_message(buffer_test);

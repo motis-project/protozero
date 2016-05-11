@@ -12,6 +12,7 @@ struct assert_error : public std::runtime_error {
 
 #include <protozero/pbf_reader.hpp>
 #include <protozero/pbf_message.hpp>
+#include <protozero/message.hpp>
 
 #include <protozero/pbf_writer.hpp>
 #include <protozero/pbf_builder.hpp>

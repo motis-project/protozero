@@ -9,6 +9,14 @@ enum class Test : protozero::pbf_tag_type {
 
 } // end namespace TestBoolean
 
+namespace TestOneBoolean {
+
+PROTOZERO_MESSAGE(Test) {
+    PROTOZERO_FIELD(bool, b, 1);
+};
+
+}
+
 TEST_CASE("read bool field using pbf_reader") {
 
     SECTION("false") {
@@ -97,6 +105,50 @@ TEST_CASE("read bool field using pbf_message") {
 
 }
 
+TEST_CASE("read bool field using message") {
+
+    SECTION("false") {
+        const std::string buffer = load_data("bool/data-false");
+
+        protozero::message<TestOneBoolean::Test> item(buffer);
+
+        REQUIRE(item.next());
+        REQUIRE_FALSE(FIELD_VALUE(item, b));
+        REQUIRE_FALSE(item.next());
+    }
+
+    SECTION("true") {
+        const std::string buffer = load_data("bool/data-true");
+
+        protozero::message<TestOneBoolean::Test> item(buffer);
+
+        REQUIRE(item.next());
+        REQUIRE(FIELD_VALUE(item, b));
+        REQUIRE_FALSE(item.next());
+    }
+
+    SECTION("also true") {
+        const std::string buffer = load_data("bool/data-also-true");
+
+        protozero::message<TestOneBoolean::Test> item(buffer);
+
+        REQUIRE(item.next(FIELD_TAG(item, b)));
+        REQUIRE(FIELD_VALUE(item, b));
+        REQUIRE_FALSE(item.next());
+    }
+
+    SECTION("still true") {
+        const std::string buffer = load_data("bool/data-still-true");
+
+        protozero::message<TestOneBoolean::Test> item(buffer);
+
+        REQUIRE(item.next(FIELD_TAG(item, b)));
+        REQUIRE(FIELD_VALUE(item, b));
+        REQUIRE_FALSE(item.next());
+    }
+
+}
+
 TEST_CASE("write bool field using pbf_writer") {
 
     std::string buffer;
@@ -126,6 +178,23 @@ TEST_CASE("write bool field using pbf_builder") {
 
     SECTION("true") {
         pw.add_bool(TestBoolean::Test::required_bool_b, true);
+        REQUIRE(buffer == load_data("bool/data-true"));
+    }
+
+}
+
+TEST_CASE("write bool field using builder") {
+
+    std::string buffer;
+    protozero::builder<TestOneBoolean::Test> pw(buffer);
+
+    SECTION("false") {
+        ADD_FIELD(pw, b, false);
+        REQUIRE(buffer == load_data("bool/data-false"));
+    }
+
+    SECTION("true") {
+        ADD_FIELD(pw, b, true);
         REQUIRE(buffer == load_data("bool/data-true"));
     }
 
