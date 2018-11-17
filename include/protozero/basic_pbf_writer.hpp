@@ -99,7 +99,7 @@ class basic_pbf_writer {
         protozero_assert(m_pos == 0 && "you can't add fields to a parent basic_pbf_writer if there is an existing basic_pbf_writer for a submessage");
         protozero_assert(m_data);
 #if PROTOZERO_BYTE_ORDER != PROTOZERO_LITTLE_ENDIAN
-        detail::byteswap_inplace(&value);
+        byteswap_inplace(&value);
 #endif
         buffer_append(m_data, reinterpret_cast<const char*>(&value), sizeof(T));
     }
@@ -793,6 +793,35 @@ public:
     }
 
     /**
+     * Add a "repeated packed" fixed-size field to data. The following
+     * fixed-size fields are available:
+     *
+     * uint32_t -> repeated packed fixed32
+     * int32_t  -> repeated packed sfixed32
+     * uint64_t -> repeated packed fixed64
+     * int64_t  -> repeated packed sfixed64
+     * double   -> repeated packed double
+     * float    -> repeated packed float
+     *
+     * @tparam ValueType One of the following types: (u)int32/64_t, double, float.
+     * @tparam InputIterator A type satisfying the InputIterator concept.
+     * @param tag Tag (field number) of the field
+     * @param first Iterator pointing to the beginning of the data
+     * @param last Iterator pointing one past the end of data
+     */
+    template <typename ValueType, typename InputIterator>
+    void add_packed_fixed(pbf_tag_type tag, InputIterator first, InputIterator last) {
+        static_assert(std::is_same<ValueType, uint32_t>::value ||
+                      std::is_same<ValueType, int32_t>::value ||
+                      std::is_same<ValueType, int64_t>::value ||
+                      std::is_same<ValueType, uint64_t>::value ||
+                      std::is_same<ValueType, double>::value ||
+                      std::is_same<ValueType, float>::value, "Only some types are allowed");
+        add_packed_fixed<ValueType, InputIterator>(tag, first, last,
+            typename std::iterator_traits<InputIterator>::iterator_category{});
+    }
+
+    /**
      * Add "repeated packed fixed32" field to data.
      *
      * @tparam InputIterator A type satisfying the InputIterator concept.
@@ -804,7 +833,7 @@ public:
     template <typename InputIterator>
     void add_packed_fixed32(pbf_tag_type tag, InputIterator first, InputIterator last) {
         add_packed_fixed<uint32_t, InputIterator>(tag, first, last,
-            typename std::iterator_traits<InputIterator>::iterator_category());
+            typename std::iterator_traits<InputIterator>::iterator_category{});
     }
 
     /**
@@ -819,7 +848,7 @@ public:
     template <typename InputIterator>
     void add_packed_sfixed32(pbf_tag_type tag, InputIterator first, InputIterator last) {
         add_packed_fixed<int32_t, InputIterator>(tag, first, last,
-            typename std::iterator_traits<InputIterator>::iterator_category());
+            typename std::iterator_traits<InputIterator>::iterator_category{});
     }
 
     /**
@@ -834,7 +863,7 @@ public:
     template <typename InputIterator>
     void add_packed_fixed64(pbf_tag_type tag, InputIterator first, InputIterator last) {
         add_packed_fixed<uint64_t, InputIterator>(tag, first, last,
-            typename std::iterator_traits<InputIterator>::iterator_category());
+            typename std::iterator_traits<InputIterator>::iterator_category{});
     }
 
     /**
@@ -849,7 +878,7 @@ public:
     template <typename InputIterator>
     void add_packed_sfixed64(pbf_tag_type tag, InputIterator first, InputIterator last) {
         add_packed_fixed<int64_t, InputIterator>(tag, first, last,
-            typename std::iterator_traits<InputIterator>::iterator_category());
+            typename std::iterator_traits<InputIterator>::iterator_category{});
     }
 
     /**
@@ -864,7 +893,7 @@ public:
     template <typename InputIterator>
     void add_packed_float(pbf_tag_type tag, InputIterator first, InputIterator last) {
         add_packed_fixed<float, InputIterator>(tag, first, last,
-            typename std::iterator_traits<InputIterator>::iterator_category());
+            typename std::iterator_traits<InputIterator>::iterator_category{});
     }
 
     /**
@@ -879,7 +908,7 @@ public:
     template <typename InputIterator>
     void add_packed_double(pbf_tag_type tag, InputIterator first, InputIterator last) {
         add_packed_fixed<double, InputIterator>(tag, first, last,
-            typename std::iterator_traits<InputIterator>::iterator_category());
+            typename std::iterator_traits<InputIterator>::iterator_category{});
     }
 
     ///@}
