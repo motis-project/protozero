@@ -36,18 +36,18 @@ init:
 # halts: "msys2-runtime and catgets are in conflict. Remove catgets?"
 # See also: https://github.com/Alexpux/MSYS2-packages/issues/1141
 install:
+  - set conda_root=C:\Miniconda36-x64
+  - set "PATH=%PATH%;%conda_root%\Scripts"
   - if "%config%"=="MSYS2" (
       set "PATH=C:\msys64\mingw64\bin;C:\msys64\usr\bin;%PATH%" &&
       pacman --noconfirm --sync --refresh --refresh --sysupgrade --sysupgrade --ask=20 &&
       pacman -Rc --noconfirm mingw-w64-x86_64-gcc-libs &&
       pacman -S --needed --noconfirm mingw-w64-x86_64-gcc mingw-w64-x86_64-cmake mingw-w64-x86_64-doxygen mingw-w64-x86_64-protobuf
     ) else (
-      set conda_root=C:\Miniconda36-x64 &&
-      set "PATH=%PATH%;%conda_root%\Scripts" &&
       cd c:\ &&
       conda config --set always_yes yes &&
       conda create --name protozero &&
-      activate prototero &&
+      activate protozero &&
       conda install protobuf=3.6.1
     )
 
