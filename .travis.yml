@@ -110,24 +110,26 @@ matrix:
     - os: linux
       compiler: "gcc-4.7"
       env: BUILD='Debug' CC=gcc-4.7 CXX=g++-4.7
+      dist: trusty
       addons: *gcc47
 
     - os: linux
       compiler: "gcc-4.8"
       env: BUILD='Debug' CC=gcc-4.8 CXX=g++-4.8
+      dist: trusty
       addons: *gcc48
 
     - os: linux
       compiler: "gcc-4.9"
       env: BUILD='Debug' CC=gcc-4.9 CXX=g++-4.9
-           COVERAGE=gcov-4.9
-           CXXFLAGS="--coverage" LDFLAGS="--coverage"
+      dist: trusty
       addons: *gcc49
 
     - os: linux
       compiler: "gcc-5"
       env: BUILD='Debug' CC=gcc-5 CXX=g++-5
            CXXFLAGS="-D_GLIBCXX_USE_CXX11_ABI=0"
+      dist: trusty
       addons: *gcc5
 
     - os: linux
@@ -139,6 +141,8 @@ matrix:
     - os: linux
       compiler: "gcc-6"
       env: BUILD='Debug' CC=gcc-6 CXX=g++-6
+           COVERAGE=gcov-6
+           CXXFLAGS="--coverage" LDFLAGS="--coverage"
       addons: *gcc6
 
     - os: linux
