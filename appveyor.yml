@@ -42,7 +42,7 @@ install:
       pacman -Rc --noconfirm mingw-w64-x86_64-gcc-libs &&
       pacman -S --needed --noconfirm mingw-w64-x86_64-gcc mingw-w64-x86_64-cmake mingw-w64-x86_64-doxygen mingw-w64-x86_64-protobuf
     ) else (
-      '"C:\Program Files (x86)\Microsoft Visual Studio 14.0\VC\vcvarsall" amd64'
+      C:\Program Files (x86)\Microsoft Visual Studio 14.0\VC\vcvarsall amd64
     )
 
 build_script:
