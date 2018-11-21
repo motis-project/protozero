@@ -59,7 +59,7 @@ build_script:
       cmake .. -LA -G "MSYS Makefiles" &&
       make VERBOSE=1
     ) else (
-      "C:\Program Files (x86)\Microsoft Visual Studio 14.0\VC\vcvarsall" "%vcvarsall_arg%" &&
+      "C:\Program Files (x86)\Microsoft Visual Studio 14.0\VC\vcvarsall" %vcvarsall_arg% &&
       cmake .. -LA -G "NMake Makefiles" -DCMAKE_BUILD_TYPE=%config% &&
       nmake VERBOSE=1
     )
