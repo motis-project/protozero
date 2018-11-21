@@ -42,7 +42,7 @@ install:
       pacman -Rc --noconfirm mingw-w64-x86_64-gcc-libs &&
       pacman -S --needed --noconfirm mingw-w64-x86_64-gcc mingw-w64-x86_64-cmake mingw-w64-x86_64-doxygen mingw-w64-x86_64-protobuf
     ) else (
-      set conda_root=C:\Miniconda36-x64) &&
+      set conda_root=C:\Miniconda36-x64 &&
       set "PATH=%PATH%;%conda_root%\Scripts" &&
       cd c:\ &&
       conda config --set always_yes yes &&
