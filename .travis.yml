@@ -141,24 +141,24 @@ matrix:
     - os: linux
       compiler: "gcc-6"
       env: BUILD='Debug' CC=gcc-6 CXX=g++-6
-           COVERAGE=gcov-6
-           CXXFLAGS="--coverage" LDFLAGS="--coverage"
-      addons: *gcc6
-
-    - os: linux
-      compiler: "gcc-6"
-      env: BUILD='Debug' CC=gcc-6 CXX=g++-6
-           PROTOZERO_DATA_VIEW=std::experimental::string_view
-      addons: *gcc6
-
-    - os: linux
-      compiler: "gcc-6"
-      env: BUILD='Release' CC=gcc-6 CXX=g++-6
       addons: *gcc6
 
     - os: linux
       compiler: "gcc-7"
       env: BUILD='Debug' CC=gcc-7 CXX=g++-7
+           COVERAGE=gcov-7
+           CXXFLAGS="--coverage" LDFLAGS="--coverage"
+      addons: *gcc7
+
+    - os: linux
+      compiler: "gcc-7"
+      env: BUILD='Debug' CC=gcc-7 CXX=g++-7
+           PROTOZERO_DATA_VIEW=std::experimental::string_view
+      addons: *gcc7
+
+    - os: linux
+      compiler: "gcc-7"
+      env: BUILD='Release' CC=gcc-7 CXX=g++-7
       addons: *gcc7
 
     - os: osx
