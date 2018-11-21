@@ -172,9 +172,9 @@ matrix:
       env: BUILD='Debug'
 
     - os: osx
-      osx_image: xcode9.4
+      osx_image: xcode10.1
       compiler: clang
-      env: BUILD='Release'
+      env: BUILD='Debug'
 
     - os: osx
       osx_image: xcode10.1
