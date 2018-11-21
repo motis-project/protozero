@@ -36,17 +36,27 @@ init:
 # halts: "msys2-runtime and catgets are in conflict. Remove catgets?"
 # See also: https://github.com/Alexpux/MSYS2-packages/issues/1141
 install:
-  - if [%config%]==[MSYS2] (
-          C:\msys64\usr\bin\pacman --noconfirm --sync --refresh --refresh --sysupgrade --sysupgrade --ask=20
-       && C:\msys64\usr\bin\pacman -Rc --noconfirm mingw-w64-x86_64-gcc-libs
+  - if "%config%"=="MSYS2" (
+      set "PATH=C:\msys64\mingw64\bin;C:\msys64\usr\bin;%PATH%" &&
+      pacman --noconfirm --sync --refresh --refresh --sysupgrade --sysupgrade --ask=20 &&
+      pacman -Rc --noconfirm mingw-w64-x86_64-gcc-libs &&
+      pacman -S --needed --noconfirm mingw-w64-x86_64-gcc mingw-w64-x86_64-cmake mingw-w64-x86_64-doxygen mingw-w64-x86_64-protobuf
+    ) else (
+      '"C:\Program Files (x86)\Microsoft Visual Studio 14.0\VC\vcvarsall" amd64'
     )
 
 build_script:
-  - if [%config%]==[MSYS2] (
-        build-msys2.bat
+  - mkdir build
+  - cd build
+  - if "%config%"=="MSYS2" (
+      cmake .. -LA -G "MSYS Makefiles" &&
+      make VERBOSE=1
     ) else (
-        build-appveyor.bat
+      cmake .. -LA -G "NMake Makefiles" -DCMAKE_BUILD_TYPE=%config% &&
+      nmake
     )
 
+test_script:
+  - ctest --output-on-failure
 
 #-----------------------------------------------------------------------------
