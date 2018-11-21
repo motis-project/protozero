@@ -41,9 +41,18 @@ install:
       pacman --noconfirm --sync --refresh --refresh --sysupgrade --sysupgrade --ask=20 &&
       pacman -Rc --noconfirm mingw-w64-x86_64-gcc-libs &&
       pacman -S --needed --noconfirm mingw-w64-x86_64-gcc mingw-w64-x86_64-cmake mingw-w64-x86_64-doxygen mingw-w64-x86_64-protobuf
+    ) else (
+      set conda_root=C:\Miniconda36-x64) &&
+      set "PATH=%PATH%;%conda_root%\Scripts" &&
+      cd c:\ &&
+      conda config --set always_yes yes &&
+      conda create --name protozero &&
+      activate prototero &&
+      conda install protobuf=3.6.1
     )
 
 build_script:
+  - cd c:\projects\protozero
   - mkdir build
   - cd build
   - if "%config%"=="MSYS2" (
